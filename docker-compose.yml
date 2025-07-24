@@ -1,0 +1,181 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database for shared knowledge and analytics
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: gergy_knowledge
+      POSTGRES_USER: gergy_user
+      POSTGRES_PASSWORD: gergy_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./shared/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gergy_user -d gergy_knowledge"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for high-performance caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Financial MCP Server
+  financial-server:
+    build:
+      context: .
+      dockerfile: servers/financial/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://gergy_user:gergy_password@postgres:5432/gergy_knowledge
+      - REDIS_URL=redis://redis:6379
+      - DOMAIN_NAME=financial
+      - DAILY_BUDGET_LIMIT=15.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./servers/financial:/app/servers/financial
+      - ./shared:/app/shared
+
+  # Family MCP Server
+  family-server:
+    build:
+      context: .
+      dockerfile: servers/family/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://gergy_user:gergy_password@postgres:5432/gergy_knowledge
+      - REDIS_URL=redis://redis:6379
+      - DOMAIN_NAME=family
+      - DAILY_BUDGET_LIMIT=10.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./servers/family:/app/servers/family
+      - ./shared:/app/shared
+
+  # Lifestyle MCP Server
+  lifestyle-server:
+    build:
+      context: .
+      dockerfile: servers/lifestyle/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://gergy_user:gergy_password@postgres:5432/gergy_knowledge
+      - REDIS_URL=redis://redis:6379
+      - DOMAIN_NAME=lifestyle
+      - DAILY_BUDGET_LIMIT=8.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./servers/lifestyle:/app/servers/lifestyle
+      - ./shared:/app/shared
+
+  # Professional MCP Server
+  professional-server:
+    build:
+      context: .
+      dockerfile: servers/professional/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://gergy_user:gergy_password@postgres:5432/gergy_knowledge
+      - REDIS_URL=redis://redis:6379
+      - DOMAIN_NAME=professional
+      - DAILY_BUDGET_LIMIT=12.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./servers/professional:/app/servers/professional
+      - ./shared:/app/shared
+
+  # Home MCP Server
+  home-server:
+    build:
+      context: .
+      dockerfile: servers/home/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://gergy_user:gergy_password@postgres:5432/gergy_knowledge
+      - REDIS_URL=redis://redis:6379
+      - DOMAIN_NAME=home
+      - DAILY_BUDGET_LIMIT=8.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./servers/home:/app/servers/home
+      - ./shared:/app/shared
+
+  # Monitoring and Analytics Dashboard (Optional)
+  grafana:
+    image: grafana/grafana:10.2.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=gergy_admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Prometheus for metrics collection (Optional)
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local
+
+networks:
+  default:
+    name: gergy-network
+    driver: bridge
