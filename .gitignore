@@ -63,3 +63,6 @@ postgres_data/
 redis_data/
 grafana_data/
 prometheus_data/
+
+# Handoff documentation with sensitive information
+HANDOFF_CONTEXT.md
