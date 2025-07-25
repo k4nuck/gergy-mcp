@@ -1,0 +1,65 @@
+# Gergy AI Personal Data - DO NOT COMMIT
+# Personal knowledge base data files
+data/
+schemas/
+import_data.py
+test_performance.py
+
+# Processed knowledge files from gergy-knowledge-files
+*.jsonl
+
+# Temporary database files
+test_table.sql
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Docker volumes (just in case)
+postgres_data/
+redis_data/
+grafana_data/
+prometheus_data/
