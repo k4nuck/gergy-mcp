@@ -58,7 +58,8 @@ pip install -r requirements.txt
 ```bash
 python -c "
 from shared.models.database import DatabaseConfig
-config = DatabaseConfig('postgresql://gergy_user:gergy_password@localhost:5432/gergy_knowledge')
+import os
+config = DatabaseConfig(os.getenv('DATABASE_URL'))
 config.create_tables()
 print('Database initialized successfully')
 "
@@ -155,7 +156,7 @@ Key configuration options in `.env`:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://gergy_user:gergy_password@localhost:5432/gergy_knowledge
+DATABASE_URL=postgresql://username:password@localhost:5432/gergy_knowledge
 
 # Redis
 REDIS_URL=redis://localhost:6379

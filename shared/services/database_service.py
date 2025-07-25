@@ -42,17 +42,25 @@ class DatabaseService:
         domain: str, 
         title: str, 
         content: str, 
-        metadata: Dict[str, Any], 
-        keywords: List[str]
+        content_type: str = "text",
+        keywords: List[str] = None,
+        relevance_domains: List[str] = None,
+        sophistication_level: str = "basic",
+        cross_domain_applicability: float = 0.0,
+        source_file: str = None
     ) -> str:
         """Store knowledge item with domain tagging."""
         with self.get_session() as session:
             knowledge_item = KnowledgeItem(
                 domain=domain,
+                content_type=content_type,
                 title=title,
                 content=content,
-                metadata=metadata,
-                keywords=keywords
+                keywords=keywords or [],
+                relevance_domains=relevance_domains or [domain],
+                sophistication_level=sophistication_level,
+                cross_domain_applicability=cross_domain_applicability,
+                source_file=source_file
             )
             session.add(knowledge_item)
             session.flush()

@@ -64,5 +64,15 @@ redis_data/
 grafana_data/
 prometheus_data/
 
+# Environment files with sensitive keys
+.env
+.env.local
+.env.production
+.env.staging
+
+# Backup files that might contain credentials
+*.bak
+*.backup
+
 # Handoff documentation with sensitive information
 HANDOFF_CONTEXT.md

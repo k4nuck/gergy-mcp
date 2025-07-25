@@ -11,17 +11,10 @@ import json
 import os
 from dataclasses import dataclass
 
-# MCP imports (these would be actual MCP SDK imports)
-try:
-    from mcp import Server, Tool, TextContent, ImageContent
-    from mcp.types import ToolCall
-except ImportError:
-    # Placeholder for MCP imports during development
-    class Server: pass
-    class Tool: pass
-    class TextContent: pass
-    class ImageContent: pass
-    class ToolCall: pass
+# MCP imports - Official MCP SDK
+from mcp.server import FastMCP
+from mcp import Tool
+from mcp.types import TextContent, ImageContent, CallToolRequest
 
 from .services.database_service import DatabaseService
 from .services.pattern_recognition_service import PatternRecognitionService
@@ -58,7 +51,7 @@ class BaseMCPServer(ABC):
         self.cache_service = CacheService(self.db_service, redis_url)
         
         # MCP Server instance
-        self.mcp_server = Server(self.server_name)
+        self.mcp_server = FastMCP(name=self.server_name)
         
         # Tool registry
         self.tools: Dict[str, MCPToolDefinition] = {}
@@ -187,73 +180,59 @@ class BaseMCPServer(ABC):
         )
         self.tools[name] = tool_def
         
-        # Register with MCP server
-        self.mcp_server.register_tool(
-            Tool(
-                name=name,
-                description=description,
-                inputSchema=parameters
-            )
+        # Wrap handler with standard functionality and register with FastMCP server
+        wrapped_handler = self._wrap_tool_handler(name, handler)
+        self.mcp_server.add_tool(
+            fn=wrapped_handler,
+            name=name,
+            description=description
         )
     
     def _setup_mcp_handlers(self):
         """Set up MCP message handlers."""
-        
-        @self.mcp_server.call_tool()
-        async def handle_tool_call(tool_call: ToolCall) -> Union[TextContent, ImageContent, List[Union[TextContent, ImageContent]]]:
-            """Handle incoming tool calls."""
-            return await self._process_tool_call(tool_call)
+        # FastMCP handles tool calls automatically through registered functions
+        # No additional setup needed
+        pass
     
-    async def _process_tool_call(self, tool_call: ToolCall) -> Union[TextContent, ImageContent, List[Union[TextContent, ImageContent]]]:
-        """Process an incoming tool call."""
-        self.request_count += 1
-        start_time = datetime.utcnow()
+    def _wrap_tool_handler(self, tool_name: str, handler: Callable):
+        """Wrap a tool handler to add standard functionality."""
+        async def wrapped_handler(**kwargs):
+            self.request_count += 1
+            start_time = datetime.utcnow()
+            
+            try:
+                # Track API usage if this involves external calls  
+                await self._track_tool_usage(tool_name, kwargs)
+                
+                # Analyze conversation for patterns
+                if "query" in kwargs or "context" in kwargs:
+                    content = kwargs.get("query", kwargs.get("context", ""))
+                    await self.pattern_service.analyze_conversation(
+                        content, self.domain_name, self.current_session_id or "default"
+                    )
+                
+                # Execute tool handler
+                result = await handler(kwargs)
+                
+                # Cache result if appropriate
+                await self._cache_tool_result(tool_name, kwargs, result)
+                
+                # Update knowledge base
+                await self._update_knowledge_from_tool_result(tool_name, kwargs, result)
+                
+                return result
+                
+            except Exception as e:
+                self.error_count += 1
+                logger.error(f"Tool call error in {self.server_name}: {e}")
+                raise
+            
+            finally:
+                # Log performance
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                logger.debug(f"Tool {tool_name} completed in {duration:.2f}s")
         
-        try:
-            tool_name = tool_call.params.get("name")
-            arguments = tool_call.params.get("arguments", {})
-            
-            if tool_name not in self.tools:
-                raise ValueError(f"Unknown tool: {tool_name}")
-            
-            tool_def = self.tools[tool_name]
-            
-            # Track API usage if this involves external calls
-            await self._track_tool_usage(tool_name, arguments)
-            
-            # Analyze conversation for patterns
-            if "query" in arguments or "context" in arguments:
-                content = arguments.get("query", arguments.get("context", ""))
-                await self.pattern_service.analyze_conversation(
-                    content, self.domain_name, self.current_session_id or "default"
-                )
-            
-            # Execute tool handler
-            result = await tool_def.handler(arguments)
-            
-            # Cache result if appropriate
-            await self._cache_tool_result(tool_name, arguments, result)
-            
-            # Update knowledge base
-            await self._update_knowledge_from_tool_result(tool_name, arguments, result)
-            
-            # Return result as TextContent
-            if isinstance(result, dict):
-                return TextContent(text=json.dumps(result, indent=2))
-            elif isinstance(result, str):
-                return TextContent(text=result)
-            else:
-                return TextContent(text=str(result))
-            
-        except Exception as e:
-            self.error_count += 1
-            logger.error(f"Tool call error in {self.server_name}: {e}")
-            return TextContent(text=f"Error: {str(e)}")
-        
-        finally:
-            # Log performance
-            duration = (datetime.utcnow() - start_time).total_seconds()
-            logger.debug(f"Tool {tool_name} completed in {duration:.2f}s")
+        return wrapped_handler
     
     async def _track_tool_usage(self, tool_name: str, arguments: Dict[str, Any]):
         """Track tool usage for cost management."""

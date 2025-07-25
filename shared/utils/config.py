@@ -48,7 +48,7 @@ def load_config(config_path: Optional[str] = None) -> GergyConfig:
     # Default configuration
     config_data = {
         "database": {
-            "url": os.getenv("DATABASE_URL", "postgresql://gergy_user:gergy_password@localhost:5432/gergy_knowledge"),
+            "url": os.getenv("DATABASE_URL"),
             "echo": os.getenv("DATABASE_ECHO", "false").lower() == "true",
             "pool_size": int(os.getenv("DATABASE_POOL_SIZE", "10")),
             "max_overflow": int(os.getenv("DATABASE_MAX_OVERFLOW", "20"))
@@ -115,6 +115,10 @@ def load_config(config_path: Optional[str] = None) -> GergyConfig:
             
             # Merge file config with defaults
             config_data = _merge_config(config_data, file_config)
+    
+    # Validate required configuration
+    if not config_data["database"]["url"]:
+        raise ValueError("DATABASE_URL environment variable is required")
     
     # Parse into dataclasses
     database_config = DatabaseConfig(**config_data["database"])

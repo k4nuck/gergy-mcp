@@ -12,7 +12,8 @@ docker-compose up -d postgres redis
 # Initialize database tables
 python -c "
 from shared.models.database import DatabaseConfig
-config = DatabaseConfig('postgresql://gergy_user:gergy_password@localhost:5432/gergy_knowledge')
+import os
+config = DatabaseConfig(os.getenv('DATABASE_URL'))
 config.create_tables()
 print('Database initialized successfully')
 "
