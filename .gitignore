@@ -76,3 +76,31 @@ prometheus_data/
 
 # Handoff documentation with sensitive information
 HANDOFF_CONTEXT.md
+
+# SSL certificates and private keys - SECURITY SENSITIVE
+*.pem
+*.key
+*.crt
+*.cert
+server.key
+certs/
+*.csr
+
+# Virtual environment directories
+gergy-env/
+*-env/
+
+# Cloudflare and tunnel configurations
+tunnel.json
+cloudflared.deb
+*tunnel*
+*.pid
+
+# Personal scripts with potential sensitive data
+setup_env.sh
+start_gergy.sh
+stop_gergy.sh
+
+# Requirements backups
+requirements.minimal.txt
+=1.12.0

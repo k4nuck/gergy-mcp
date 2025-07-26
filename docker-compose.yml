@@ -45,6 +45,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - DOMAIN_NAME=financial
       - DAILY_BUDGET_LIMIT=15.0
+      - HTTPS_MODE=true
+      - PORT=8000
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,6 +58,7 @@ services:
     volumes:
       - ./servers/financial:/app/servers/financial
       - ./shared:/app/shared
+      - ./certs:/app/certs
 
   # Family MCP Server
   family-server:

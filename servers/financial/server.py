@@ -5,8 +5,15 @@ Financial MCP Server - Domain-specific financial planning and analysis tools.
 import asyncio
 import logging
 import os
-from typing import Dict, Any, List
+import ssl
+from typing import Dict, Any
 from datetime import datetime, timedelta
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, Response
+import uvicorn
+import json
 
 from shared.base_mcp_server import BaseMCPServer
 
@@ -21,319 +28,416 @@ class FinancialMCPServer(BaseMCPServer):
     async def register_domain_tools(self):
         """Register financial-specific tools."""
         
-        # Budget analysis tool
+        # Financial context retrieval tool
         self.register_tool(
-            name="analyze_budget",
-            description="Analyze budget data and provide insights",
+            name="retrieve_financial_context",
+            description="Retrieve relevant financial data based on structured query parameters",
             parameters={
                 "type": "object",
                 "properties": {
-                    "income": {"type": "number", "description": "Monthly income"},
-                    "expenses": {
-                        "type": "object",
-                        "description": "Expense categories with amounts",
-                        "additionalProperties": {"type": "number"}
+                    "query_type": {
+                        "type": "string",
+                        "description": "Type of financial query",
+                        "enum": ["expense_analysis", "budget_planning", "goal_tracking", "account_summary", "transaction_history", "investment_review"]
                     },
-                    "goals": {
+                    "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Financial goals"
+                        "description": "Specific financial categories to include (e.g., travel, dining, housing)"
+                    },
+                    "timeframe": {
+                        "type": "string",
+                        "description": "Time period for data retrieval",
+                        "enum": ["current_month", "last_month", "last_3_months", "last_6_months", "last_year", "ytd", "all_time"]
+                    },
+                    "amount_range": {
+                        "type": "object",
+                        "properties": {
+                            "min": {"type": "number"},
+                            "max": {"type": "number"}
+                        },
+                        "description": "Optional amount range filter"
+                    },
+                    "accounts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific accounts to include"
                     }
                 },
-                "required": ["income", "expenses"]
+                "required": ["query_type"]
             },
-            handler=self._handle_budget_analysis
+            handler=self._handle_context_retrieval
         )
         
-        # Investment portfolio analysis
+        # Store financial data tool
         self.register_tool(
-            name="analyze_portfolio",
-            description="Analyze investment portfolio and provide recommendations",
+            name="store_financial_data",
+            description="Store financial information with support for explicit commands and conversational context",
             parameters={
                 "type": "object",
                 "properties": {
-                    "holdings": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "symbol": {"type": "string"},
-                                "quantity": {"type": "number"},
-                                "cost_basis": {"type": "number"}
-                            }
+                    "data_type": {
+                        "type": "string",
+                        "description": "Type of financial data",
+                        "enum": ["transaction", "account_balance", "goal", "budget_item", "investment_holding", "debt_balance", "income", "recurring_expense"]
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "The financial data to store",
+                        "properties": {
+                            "amount": {"type": "number", "description": "Monetary amount (positive for income/assets, negative for expenses)"},
+                            "account": {"type": "string", "description": "Account name (checking, savings, credit_card, etc.)"},
+                            "category": {"type": "string", "description": "Category (groceries, dining, salary, etc.)"},
+                            "description": {"type": "string", "description": "Description or notes"},
+                            "date": {"type": "string", "format": "date", "description": "Transaction or record date"},
+                            "merchant": {"type": "string", "description": "Merchant or source"},
+                            "recurring": {"type": "boolean", "description": "Whether this is a recurring item"}
                         }
                     },
-                    "risk_tolerance": {
+                    "update_method": {
                         "type": "string",
-                        "enum": ["conservative", "moderate", "aggressive"]
+                        "description": "How this data was obtained",
+                        "enum": ["explicit", "conversational", "imported", "calculated"],
+                        "default": "explicit"
                     },
-                    "time_horizon": {"type": "integer", "description": "Investment timeline in years"}
-                },
-                "required": ["holdings"]
-            },
-            handler=self._handle_portfolio_analysis
-        )
-        
-        # Financial goal planning
-        self.register_tool(
-            name="plan_financial_goal",
-            description="Create a plan to achieve specific financial goals",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "goal_type": {
+                    "confidence_score": {
+                        "type": "number",
+                        "description": "Confidence in the data accuracy (0.0-1.0, higher is more confident)",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 1.0
+                    },
+                    "source_context": {
                         "type": "string",
-                        "enum": ["retirement", "house", "vacation", "emergency_fund", "education", "other"]
-                    },
-                    "target_amount": {"type": "number", "description": "Target amount needed"},
-                    "current_savings": {"type": "number", "description": "Current amount saved"},
-                    "timeline_months": {"type": "integer", "description": "Timeline in months"},
-                    "monthly_contribution": {"type": "number", "description": "Monthly contribution ability"}
-                },
-                "required": ["goal_type", "target_amount", "timeline_months"]
-            },
-            handler=self._handle_goal_planning
-        )
-        
-        # Debt optimization
-        self.register_tool(
-            name="optimize_debt_payoff",
-            description="Optimize debt payoff strategy",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "debts": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "balance": {"type": "number"},
-                                "interest_rate": {"type": "number"},
-                                "minimum_payment": {"type": "number"}
-                            }
-                        }
-                    },
-                    "extra_payment": {"type": "number", "description": "Extra monthly amount for debt payoff"},
-                    "strategy": {
-                        "type": "string",
-                        "enum": ["avalanche", "snowball", "hybrid"],
-                        "default": "avalanche"
+                        "description": "Original user statement or context that generated this data"
                     }
                 },
-                "required": ["debts"]
+                "required": ["data_type", "data"]
             },
-            handler=self._handle_debt_optimization
+            handler=self._handle_data_storage
+        )
+        
+        # Financial summary tool
+        self.register_tool(
+            name="get_financial_summary",
+            description="Get current financial snapshot with account balances, recent activity, and key metrics",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "include_accounts": {
+                        "type": "boolean",
+                        "description": "Include account balances",
+                        "default": True
+                    },
+                    "include_recent_activity": {
+                        "type": "boolean",
+                        "description": "Include recent transactions",
+                        "default": True
+                    },
+                    "include_goals": {
+                        "type": "boolean",
+                        "description": "Include financial goals status",
+                        "default": True
+                    }
+                }
+            },
+            handler=self._handle_financial_summary
+        )
+        
+        # Search financial history tool
+        self.register_tool(
+            name="search_financial_history",
+            description="Search historical financial data with flexible filters",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "search_term": {
+                        "type": "string",
+                        "description": "Text to search for in descriptions, categories, or notes"
+                    },
+                    "date_range": {
+                        "type": "object",
+                        "properties": {
+                            "start_date": {"type": "string", "format": "date"},
+                            "end_date": {"type": "string", "format": "date"}
+                        }
+                    },
+                    "transaction_types": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Types of transactions to include (income, expense, transfer, etc.)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return",
+                        "default": 50
+                    }
+                }
+            },
+            handler=self._handle_history_search
         )
 
-    async def _handle_budget_analysis(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze budget and provide insights."""
-        income = arguments["income"]
-        expenses = arguments["expenses"]
-        goals = arguments.get("goals", [])
+    async def _handle_context_retrieval(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieve relevant financial data based on query parameters."""
+        query_type = arguments["query_type"]
+        categories = arguments.get("categories", [])
+        timeframe = arguments.get("timeframe", "current_month")
+        amount_range = arguments.get("amount_range")
+        accounts = arguments.get("accounts", [])
         
-        total_expenses = sum(expenses.values())
-        net_income = income - total_expenses
-        savings_rate = (net_income / income) * 100 if income > 0 else 0
+        # Use database service to retrieve relevant financial data
+        search_filters = {
+            "domain": "financial",
+            "keywords": categories,
+        }
         
-        # Categorize spending
-        spending_analysis = {}
-        for category, amount in expenses.items():
-            percentage = (amount / income) * 100 if income > 0 else 0
-            spending_analysis[category] = {
-                "amount": amount,
-                "percentage_of_income": round(percentage, 2)
-            }
+        # Add timeframe filtering logic here
+        if timeframe != "all_time":
+            search_filters["metadata"] = {"timeframe": timeframe}
         
-        # Budget health assessment
-        health_score = min(100, max(0, savings_rate * 2))  # Simple scoring
+        # Retrieve data from database
+        financial_data = await self.db_service.search_knowledge(
+            query=f"{query_type} {' '.join(categories)}",
+            **search_filters
+        )
         
-        recommendations = []
-        if savings_rate < 10:
-            recommendations.append("Consider increasing savings rate to at least 10% of income")
-        if savings_rate < 0:
-            recommendations.append("URGENT: Expenses exceed income - review and cut costs immediately")
-        
-        # Check for high expense categories
-        for category, data in spending_analysis.items():
-            if data["percentage_of_income"] > 30 and category.lower() not in ["housing", "rent"]:
-                recommendations.append(f"Consider reducing {category} spending (currently {data['percentage_of_income']:.1f}% of income)")
-        
+        # Format response with raw data
         return {
-            "budget_summary": {
-                "monthly_income": income,
-                "total_expenses": total_expenses,
-                "net_income": net_income,
-                "savings_rate": round(savings_rate, 2)
+            "query_type": query_type,
+            "filters_applied": {
+                "categories": categories,
+                "timeframe": timeframe,
+                "amount_range": amount_range,
+                "accounts": accounts
             },
-            "spending_analysis": spending_analysis,
-            "health_score": round(health_score, 1),
-            "recommendations": recommendations,
-            "goals_assessment": self._assess_goals_feasibility(net_income, goals),
-            "analysis_date": datetime.utcnow().isoformat()
+            "data": financial_data,
+            "retrieved_at": datetime.utcnow().isoformat()
         }
     
-    async def _handle_portfolio_analysis(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze investment portfolio."""
-        holdings = arguments["holdings"]
-        risk_tolerance = arguments.get("risk_tolerance", "moderate")
-        time_horizon = arguments.get("time_horizon", 10)
+    async def _handle_data_storage(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Store financial data with enhanced metadata tracking."""
+        data_type = arguments["data_type"]
+        data = arguments["data"]
+        update_method = arguments.get("update_method", "explicit")
+        confidence_score = arguments.get("confidence_score", 1.0)
+        source_context = arguments.get("source_context", "")
         
-        total_value = sum(h.get("quantity", 0) * h.get("cost_basis", 0) for h in holdings)
-        
-        # Simple diversification analysis
-        portfolio_analysis = {
-            "total_holdings": len(holdings),
-            "estimated_value": total_value,
-            "diversification_score": min(100, len(holdings) * 10),  # Simple scoring
-            "risk_assessment": risk_tolerance
+        # Build comprehensive metadata
+        metadata = {
+            "data_type": data_type,
+            "update_method": update_method,
+            "confidence_score": confidence_score,
+            "stored_at": datetime.utcnow().isoformat(),
         }
         
-        recommendations = [
-            "Consider regular portfolio rebalancing",
-            "Ensure adequate diversification across sectors and asset classes"
-        ]
+        if source_context:
+            metadata["source_context"] = source_context
+            
+        # Add financial-specific metadata
+        if "account" in data:
+            metadata["account"] = data["account"]
+        if "category" in data:
+            metadata["category"] = data["category"]
+        if "date" in data:
+            metadata["transaction_date"] = data["date"]
+        if "amount" in data:
+            metadata["amount"] = data["amount"]
+            metadata["amount_type"] = "income" if data["amount"] > 0 else "expense"
+            
+        # Build keywords for search
+        keywords = [data_type, update_method]
+        if isinstance(data, dict):
+            keywords.extend([k for k in data.keys() if isinstance(data[k], str)])
+            if "category" in data:
+                keywords.append(data["category"])
+            if "merchant" in data:
+                keywords.append(data["merchant"])
         
-        if len(holdings) < 5:
-            recommendations.append("Consider adding more holdings for better diversification")
+        # Generate descriptive title
+        title = self._generate_data_title(data_type, data)
         
-        if risk_tolerance == "conservative" and time_horizon > 15:
-            recommendations.append("With longer time horizon, consider moderate risk tolerance")
+        # Store in database using the knowledge storage system
+        result = await self.db_service.store_knowledge(
+            domain="financial",
+            title=title,
+            content=str(data),  # Convert to string for storage
+            content_type="financial_data",
+            metadata=metadata,
+            keywords=keywords
+        )
         
         return {
-            "portfolio_analysis": portfolio_analysis,
-            "recommendations": recommendations,
-            "risk_tolerance": risk_tolerance,
-            "time_horizon_years": time_horizon,
-            "analysis_date": datetime.utcnow().isoformat()
+            "status": "stored",
+            "data_type": data_type,
+            "record_id": result,
+            "update_method": update_method,
+            "confidence_score": confidence_score,
+            "stored_at": metadata["stored_at"],
+            "title": title
         }
     
-    async def _handle_goal_planning(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Create financial goal achievement plan."""
-        goal_type = arguments["goal_type"]
-        target_amount = arguments["target_amount"]
-        current_savings = arguments.get("current_savings", 0)
-        timeline_months = arguments["timeline_months"]
-        monthly_contribution = arguments.get("monthly_contribution", 0)
-        
-        remaining_amount = target_amount - current_savings
-        required_monthly_savings = remaining_amount / timeline_months if timeline_months > 0 else 0
-        
-        # Calculate if goal is achievable
-        achievable = monthly_contribution >= required_monthly_savings
-        shortfall = max(0, required_monthly_savings - monthly_contribution)
-        
-        plan = {
-            "goal_details": {
-                "type": goal_type,
-                "target_amount": target_amount,
-                "current_savings": current_savings,
-                "amount_needed": remaining_amount,
-                "timeline_months": timeline_months
-            },
-            "savings_plan": {
-                "required_monthly_savings": round(required_monthly_savings, 2),
-                "current_monthly_contribution": monthly_contribution,
-                "is_achievable": achievable,
-                "monthly_shortfall": round(shortfall, 2) if shortfall > 0 else 0
-            },
-            "recommendations": []
-        }
-        
-        if not achievable:
-            plan["recommendations"].extend([
-                f"Increase monthly savings by ${shortfall:.2f} to meet goal",
-                f"Or extend timeline by {int((remaining_amount / monthly_contribution) - timeline_months)} months"
-            ])
+    def _generate_data_title(self, data_type: str, data: Dict[str, Any]) -> str:
+        """Generate a descriptive title for the financial data."""
+        if data_type == "transaction":
+            amount = data.get("amount", 0)
+            category = data.get("category", "Unknown")
+            merchant = data.get("merchant", "")
+            if merchant:
+                return f"{category} - ${abs(amount):.2f} at {merchant}"
+            else:
+                return f"{category} - ${abs(amount):.2f}"
+        elif data_type == "account_balance":
+            account = data.get("account", "Unknown Account")
+            balance = data.get("amount", 0)
+            return f"{account} Balance: ${balance:.2f}"
+        elif data_type == "goal":
+            description = data.get("description", "Financial Goal")
+            amount = data.get("amount", 0)
+            return f"Goal: {description} (${amount:.2f})"
         else:
-            plan["recommendations"].append("Goal is achievable with current contribution plan!")
-        
-        # Add goal-specific advice
-        if goal_type == "emergency_fund":
-            plan["recommendations"].append("Aim for 3-6 months of expenses for emergency fund")
-        elif goal_type == "retirement":
-            plan["recommendations"].append("Consider maximizing employer 401(k) matching first")
-        
-        return plan
+            return f"{data_type.replace('_', ' ').title()}"
     
-    async def _handle_debt_optimization(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize debt payoff strategy."""
-        debts = arguments["debts"]
-        extra_payment = arguments.get("extra_payment", 0)
-        strategy = arguments.get("strategy", "avalanche")
+    async def _handle_financial_summary(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Get current financial snapshot."""
+        include_accounts = arguments.get("include_accounts", True)
+        include_recent_activity = arguments.get("include_recent_activity", True)
+        include_goals = arguments.get("include_goals", True)
         
-        total_debt = sum(d["balance"] for d in debts)
-        total_minimum = sum(d["minimum_payment"] for d in debts)
+        summary = {
+            "generated_at": datetime.utcnow().isoformat()
+        }
         
-        # Sort debts by strategy
-        if strategy == "avalanche":
-            sorted_debts = sorted(debts, key=lambda x: x["interest_rate"], reverse=True)
-        elif strategy == "snowball":
-            sorted_debts = sorted(debts, key=lambda x: x["balance"])
-        else:  # hybrid
-            # Sort by interest rate but prioritize small balances under $1000
-            def hybrid_key(debt):
-                if debt["balance"] < 1000:
-                    return -debt["balance"]  # Negative for ascending sort of small debts
-                return -debt["interest_rate"]  # Negative for descending sort of interest rates
-            sorted_debts = sorted(debts, key=hybrid_key)
+        if include_accounts:
+            # Retrieve account data
+            account_data = await self.db_service.search_knowledge(
+                query="accounts balances",
+                domain="financial",
+                keywords=["account", "balance"]
+            )
+            summary["accounts"] = account_data
         
-        # Calculate payoff timeline
-        payoff_plan = []
-        remaining_extra = extra_payment
+        if include_recent_activity:
+            # Retrieve recent transactions
+            recent_data = await self.db_service.search_knowledge(
+                query="recent transactions",
+                domain="financial",
+                keywords=["transaction", "recent"]
+            )
+            summary["recent_activity"] = recent_data
         
-        for i, debt in enumerate(sorted_debts):
-            priority_payment = debt["minimum_payment"]
-            if i == 0:  # First debt gets extra payment
-                priority_payment += remaining_extra
-            
-            months_to_payoff = debt["balance"] / priority_payment if priority_payment > 0 else float('inf')
-            
-            payoff_plan.append({
-                "debt_name": debt["name"],
-                "balance": debt["balance"],
-                "interest_rate": debt["interest_rate"],
-                "priority_payment": round(priority_payment, 2),
-                "estimated_payoff_months": round(months_to_payoff, 1)
-            })
+        if include_goals:
+            # Retrieve financial goals
+            goal_data = await self.db_service.search_knowledge(
+                query="financial goals",
+                domain="financial",
+                keywords=["goal", "target"]
+            )
+            summary["goals"] = goal_data
+        
+        return summary
+    
+    async def _handle_history_search(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Search historical financial data."""
+        search_term = arguments.get("search_term", "")
+        date_range = arguments.get("date_range")
+        transaction_types = arguments.get("transaction_types", [])
+        limit = arguments.get("limit", 50)
+        
+        # Build search keywords
+        keywords = transaction_types.copy()
+        if search_term:
+            keywords.extend(search_term.split())
+        
+        # Search financial history
+        results = await self.db_service.search_knowledge(
+            query=search_term or "financial history",
+            domain="financial",
+            keywords=keywords
+        )
+        
+        # Apply limit
+        if len(results) > limit:
+            results = results[:limit]
         
         return {
-            "debt_summary": {
-                "total_debt": total_debt,
-                "total_minimum_payments": total_minimum,
-                "extra_payment_available": extra_payment,
-                "strategy_used": strategy
+            "search_parameters": {
+                "search_term": search_term,
+                "date_range": date_range,
+                "transaction_types": transaction_types,
+                "limit": limit
             },
-            "payoff_plan": payoff_plan,
-            "recommendations": [
-                f"Focus extra payments on {sorted_debts[0]['name']} first",
-                "Continue minimum payments on all other debts",
-                "Consider debt consolidation if rates can be improved"
-            ],
-            "analysis_date": datetime.utcnow().isoformat()
+            "results": results,
+            "total_found": len(results),
+            "searched_at": datetime.utcnow().isoformat()
         }
     
-    def _assess_goals_feasibility(self, net_income: float, goals: List[str]) -> Dict[str, Any]:
-        """Assess feasibility of financial goals."""
-        if net_income <= 0:
-            return {"feasible": False, "reason": "No surplus income available for goals"}
-        
-        # Simple goal assessment
-        goal_assessment = {
-            "surplus_available": net_income,
-            "feasible": net_income > 0,
-            "recommended_allocation": {
-                "emergency_fund": round(net_income * 0.3, 2),
-                "retirement": round(net_income * 0.4, 2),
-                "other_goals": round(net_income * 0.3, 2)
-            }
-        }
-        
-        return goal_assessment
 
-async def main():
-    """Main function to run the Financial MCP Server."""
-    # Load environment variables
+# Global server instance
+mcp_server = None
+
+# FastAPI app for HTTPS endpoints
+app = FastAPI(title="Gergy Financial MCP Server", description="HTTPS endpoints for MCP tools")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://claude.ai",
+        "https://*.claude.ai", 
+        "https://claude.anthropic.com",
+        "https://*.anthropic.com",
+        "*"  # Fallback for development
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
+    allow_headers=[
+        "Authorization", 
+        "Content-Type", 
+        "Accept", 
+        "Origin", 
+        "X-Requested-With",
+        "Cache-Control",
+        "X-MCP-Version"
+    ],
+)
+
+# Add MCP-specific response headers and detailed logging
+@app.middleware("http")
+async def add_mcp_headers(request, call_next):
+    # Log all incoming requests with details
+    client_ip = request.client.host if request.client else "unknown"
+    origin = request.headers.get("origin", "none")
+    user_agent = request.headers.get("user-agent", "none")
+    auth_header = request.headers.get("authorization", "none")
+    
+    logger.info(f"Request: {request.method} {request.url.path} from {client_ip} | Origin: {origin} | User-Agent: {user_agent[:50]}... | Auth: {auth_header[:20]}...")
+    
+    # Handle CORS preflight requests globally
+    if request.method == "OPTIONS":
+        return Response(
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Credentials": "false",
+                "Access-Control-Max-Age": "86400"
+            }
+        )
+    
+    response = await call_next(request)
+    # Add CORS headers to all responses
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, HEAD, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "false"
+    response.headers["X-MCP-Version"] = "2024-11-05"
+    response.headers["X-MCP-Transport"] = "http"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+@app.on_event("startup")
+async def startup():
+    """Initialize MCP server on FastAPI startup."""
+    global mcp_server
     from dotenv import load_dotenv
     load_dotenv()
     
@@ -343,26 +447,419 @@ async def main():
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     budget_limit = float(os.getenv("FINANCIAL_BUDGET_LIMIT", "15.0"))
     
-    # Create and initialize server
-    server = FinancialMCPServer(
+    mcp_server = FinancialMCPServer(
         database_url=database_url,
         redis_url=redis_url,
         daily_budget_limit=budget_limit
     )
     
+    await mcp_server.initialize()
+    logger.info(f"Financial MCP Server initialized with {len(mcp_server.tools)} tools")
+
+@app.get("/")
+async def root():
+    """Health check endpoint."""
+    return {
+        "status": "running",
+        "server": "Gergy Financial MCP Server",
+        "tools": len(mcp_server.tools) if mcp_server else 0
+    }
+
+@app.options("/mcp/initialize")
+async def mcp_initialize_options():
+    """Handle CORS preflight for initialize endpoint."""
+    return Response(
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept"
+        }
+    )
+
+@app.get("/mcp/initialize")
+async def mcp_initialize():
+    """MCP protocol initialization handshake."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    return Response(
+        content=json.dumps({
+            "protocolVersion": "2025-06-18",
+            "capabilities": {
+                "tools": {
+                    "listChanged": True
+                },
+                "resources": {
+                    "subscribe": False,
+                    "listChanged": False
+                },
+                "prompts": {
+                    "listChanged": False
+                }
+            },
+            "serverInfo": {
+                "name": "gergy-financial",
+                "version": "1.0.0",
+                "description": "Gergy Financial MCP Server - Personal financial data management with 8 tools for transactions, balances, and insights"
+            }
+        }),
+        media_type="application/json",
+        headers={
+            "X-MCP-Auth": "none",
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
+@app.options("/mcp/tools/list")
+async def mcp_list_tools_options():
+    """Handle CORS preflight for tools list endpoint."""
+    return Response(
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept"
+        }
+    )
+
+@app.get("/mcp/tools/list")
+async def mcp_list_tools():
+    """MCP protocol tool discovery."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    return {
+        "tools": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.parameters
+            }
+            for tool in mcp_server.tools.values()
+        ]
+    }
+
+@app.options("/mcp/tools/call")
+async def mcp_call_tool_options():
+    """Handle CORS preflight for tool call endpoint."""
+    return Response(
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept"
+        }
+    )
+
+@app.post("/mcp/tools/call")
+async def mcp_call_tool(request: Dict[str, Any]):
+    """MCP protocol tool execution."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    tool_name = request.get("name")
+    arguments = request.get("arguments", {})
+    
+    if not tool_name:
+        raise HTTPException(status_code=400, detail="Tool name required")
+    
+    if tool_name not in mcp_server.tools:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+    
     try:
-        await server.initialize()
-        logger.info(f"Financial MCP Server initialized with {len(server.tools)} tools")
+        tool = mcp_server.tools[tool_name]
+        result = await tool.handler(arguments)
         
-        # Keep server running
-        while True:
-            await asyncio.sleep(1)
-            
-    except KeyboardInterrupt:
-        logger.info("Financial MCP Server shutting down...")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": str(result)
+                }
+            ]
+        }
     except Exception as e:
-        logger.error(f"Financial MCP Server error: {e}")
-        raise
+        logger.error(f"Error calling tool {tool_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tools")
+async def list_tools():
+    """REST API: List available MCP tools."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    return {
+        "tools": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters
+            }
+            for tool in mcp_server.tools.values()
+        ]
+    }
+
+@app.post("/tools/{tool_name}")
+async def call_tool(tool_name: str, parameters: Dict[str, Any]):
+    """Call an MCP tool."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    if tool_name not in mcp_server.tools:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+    
+    try:
+        tool = mcp_server.tools[tool_name]
+        result = await tool.handler(parameters)
+        return {"result": result}
+    except Exception as e:
+        logger.error(f"Error calling tool {tool_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# No authentication required for Claude.ai Pro MCP - just proper CORS
+
+@app.options("/mcp/sse")
+async def mcp_sse_options():
+    """Handle CORS preflight for SSE endpoint."""
+    return Response(
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "false",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
+@app.get("/mcp/sse")
+@app.post("/mcp/sse")
+@app.head("/mcp/sse")
+async def mcp_sse(request: Request):
+    """MCP Server-Sent Events endpoint for real-time communication."""
+    if not mcp_server:
+        raise HTTPException(status_code=503, detail="MCP server not initialized")
+    
+    # Handle POST body data if present
+    post_data = None
+    if request.method == "POST":
+        try:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                post_data = await request.json()
+                logger.info(f"MCP SSE POST data: {post_data}")
+            elif content_type:
+                body = await request.body()
+                if body:
+                    logger.info(f"MCP SSE POST body: {body.decode('utf-8', errors='ignore')[:200]}...")
+        except Exception as e:
+            logger.warning(f"Failed to parse POST data: {e}")
+    
+    # Log the request for debugging
+    origin = request.headers.get("origin", "unknown")
+    user_agent = request.headers.get("user-agent", "unknown")
+    logger.info(f"MCP SSE connection from origin: {origin}, user-agent: {user_agent}, method: {request.method}")
+    
+    async def event_stream():
+        import asyncio
+        
+        try:
+            # Extract request ID from POST data if available
+            request_id = 0
+            if post_data and "id" in post_data:
+                request_id = post_data["id"]
+            
+            # Send initialization message with matching ID and protocol version
+            init_message = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {
+                        "tools": {
+                            "listChanged": True
+                        },
+                        "resources": {
+                            "subscribe": False,
+                            "listChanged": False
+                        },
+                        "prompts": {
+                            "listChanged": False
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "gergy-financial",
+                        "version": "1.0.0",
+                        "description": "Gergy Financial MCP Server"
+                    }
+                }
+            }
+            init_data = f"data: {json.dumps(init_message)}\n\n"
+            logger.info(f"SSE RESPONSE 1/3: {init_data.strip()}")
+            yield init_data
+            await asyncio.sleep(0.1)  # Small delay to ensure delivery
+            
+            # Send standard MCP tools/list with all tools
+            tools_data = []
+            for tool in mcp_server.tools.values():
+                tools_data.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.parameters
+                })
+            
+            tools_message = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "result": {
+                    "tools": tools_data
+                }
+            }
+            tools_data_str = f"data: {json.dumps(tools_message)}\n\n"
+            logger.info(f"SSE RESPONSE 2/3: {tools_data_str[:500]}..." if len(tools_data_str) > 500 else f"SSE RESPONSE 2/3: {tools_data_str.strip()}")
+            yield tools_data_str
+            await asyncio.sleep(0.1)
+            
+            # Send ready signal
+            ready_message = {
+                "jsonrpc": "2.0",
+                "method": "notification/ready",
+                "params": {
+                    "status": "ready",
+                    "toolCount": len(mcp_server.tools)
+                }
+            }
+            ready_data = f"data: {json.dumps(ready_message)}\n\n"
+            logger.info(f"SSE RESPONSE 3/3: {ready_data.strip()}")
+            yield ready_data
+            await asyncio.sleep(0.1)
+            
+            # Keep connection alive with periodic pings
+            while True:
+                await asyncio.sleep(30)
+                ping_message = {
+                    "jsonrpc": "2.0",
+                    "method": "ping",
+                    "params": {
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                }
+                ping_data = f"data: {json.dumps(ping_message)}\n\n"
+                logger.info(f"SSE PING: {ping_data.strip()}")
+                yield ping_data
+                
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+            error_message = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": "Internal error",
+                    "data": str(e)
+                }
+            }
+            error_data = f"data: {json.dumps(error_message)}\n\n"
+            logger.error(f"SSE ERROR: {error_data.strip()}")
+            yield error_data
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-MCP-Transport": "sse",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "false",
+            "Access-Control-Expose-Headers": "*"
+        }
+    )
+
+def get_ssl_cert_paths():
+    """Get SSL certificate and key paths."""
+    import os
+    
+    # Use No-IP certificate if available (container path)
+    cert_dir = "/app/certs"
+    noip_cert = f"{cert_dir}/cert.pem"
+    noip_key = f"{cert_dir}/key.pem"
+    
+    if os.path.exists(noip_cert) and os.path.exists(noip_key):
+        logger.info("Using No-IP SSL certificate for k4nuckhome.hopto.org")
+        return noip_cert, noip_key
+    
+    # Fallback to self-signed certificate
+    logger.warning("No-IP certificate not found, creating self-signed certificate")
+    return create_self_signed_cert()
+
+def create_self_signed_cert():
+    """Create a self-signed certificate for HTTPS (fallback only)."""
+    import subprocess
+    import os
+    
+    cert_dir = "/tmp/certs"
+    os.makedirs(cert_dir, exist_ok=True)
+    
+    cert_file = f"{cert_dir}/cert.pem"
+    key_file = f"{cert_dir}/key.pem"
+    
+    # Always regenerate for testing
+    if os.path.exists(cert_file):
+        os.remove(cert_file)
+    if os.path.exists(key_file):
+        os.remove(key_file)
+    
+    # Simple self-signed certificate that works with Claude.ai
+    subprocess.run([
+        "openssl", "req", "-x509", "-newkey", "rsa:4096", "-nodes",
+        "-out", cert_file, "-keyout", key_file, "-days", "365",
+        "-subj", "/CN=k4nuckhome.hopto.org"
+    ], check=True)
+    
+    return cert_file, key_file
+
+async def main():
+    """Main function to run the Financial MCP Server."""
+    
+    # Check if we should run in HTTPS mode
+    https_mode = os.getenv("HTTPS_MODE", "true").lower() == "true"
+    port = int(os.getenv("PORT", "8000"))
+    
+    if https_mode:
+        try:
+            cert_file, key_file = get_ssl_cert_paths()
+            logger.info(f"Starting Financial MCP Server with HTTPS on port {port}")
+            
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(cert_file, key_file)
+            
+            config = uvicorn.Config(
+                app=app,
+                host="0.0.0.0",
+                port=port,
+                ssl_keyfile=key_file,
+                ssl_certfile=cert_file,
+                log_level="info"
+            )
+            server = uvicorn.Server(config)
+            await server.serve()
+            
+        except Exception as e:
+            logger.error(f"HTTPS setup failed: {e}")
+            logger.info("Falling back to HTTP mode")
+            https_mode = False
+    
+    if not https_mode:
+        logger.info("Starting Financial MCP Server with HTTP on port 8000")
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info"
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
