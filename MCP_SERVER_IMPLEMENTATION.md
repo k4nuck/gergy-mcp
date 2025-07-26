@@ -19,10 +19,11 @@ The Financial MCP Server is **fully functional** and successfully integrated wit
 6. **SSE Compliance**: Proper Server-Sent Events for MCP transport
 
 ### Working Configuration
-- **URL**: `https://k4nuckhome.hopto.org:8000/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/financial/mcp/sse`
+- **Legacy URL**: `https://ha-main-remote.tail9144d.ts.net/mcp/sse` (backward compatible)
 - **Protocol**: MCP over SSE (Server-Sent Events)
 - **Authentication**: None (no-auth)
-- **Transport**: HTTPS with trusted SSL certificate
+- **Transport**: HTTPS with Tailscale Funnel
 
 ## 🔄 REMAINING WORK: 4 Additional MCP Servers
 
@@ -151,16 +152,14 @@ app.add_middleware(
 - Different ports for each server (8001, 8002, 8003, 8004)
 
 #### 4. Tailscale Funnel Configuration
-Since Tailscale Funnel already routes to port 8000, future servers will need:
-- **Option A**: Path-based routing (recommended)
-  - Financial: `https://ha-main-remote.tail9144d.ts.net/mcp/sse` (WORKING)
-  - Family: `https://ha-main-remote.tail9144d.ts.net/family/mcp/sse`
-  - Home: `https://ha-main-remote.tail9144d.ts.net/home/mcp/sse`
-  - Lifestyle: `https://ha-main-remote.tail9144d.ts.net/lifestyle/mcp/sse`
-  - Professional: `https://ha-main-remote.tail9144d.ts.net/professional/mcp/sse`
+Using path-based routing with single Tailscale Funnel instance:
+- **Financial**: `https://ha-main-remote.tail9144d.ts.net/financial/mcp/sse` (WORKING)
+- **Family**: `https://ha-main-remote.tail9144d.ts.net/family/mcp/sse`
+- **Home**: `https://ha-main-remote.tail9144d.ts.net/home/mcp/sse`
+- **Lifestyle**: `https://ha-main-remote.tail9144d.ts.net/lifestyle/mcp/sse`
+- **Professional**: `https://ha-main-remote.tail9144d.ts.net/professional/mcp/sse`
 
-- **Option B**: Multiple Tailscale Funnel instances on different ports
-  - Requires configuring additional funnel routes for ports 8001-8004
+**Implementation Note**: Each server will run on different internal ports (8001-8004) but all route through the same Tailscale Funnel on port 8000 using path-based routing.
 
 ### Implementation Checklist per Server
 

@@ -3,9 +3,10 @@
 ## Quick Setup Instructions
 
 ### 1. Financial Server (WORKING)
-- **URL**: `https://ha-main-remote.tail9144d.ts.net/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/financial/mcp/sse`
 - **Name**: Gergy Financial Assistant
 - **Description**: Personal financial data management with 8 tools for transactions, balances, and insights
+- **Legacy URL**: `https://ha-main-remote.tail9144d.ts.net/mcp/sse` (backward compatible)
 
 ### 2. Family Server (TO BE IMPLEMENTED)
 - **URL**: `https://ha-main-remote.tail9144d.ts.net/family/mcp/sse`

@@ -476,7 +476,7 @@ async def mcp_initialize_options():
         }
     )
 
-@app.get("/mcp/initialize")
+@app.get("/financial/mcp/initialize")
 async def mcp_initialize():
     """MCP protocol initialization handshake."""
     if not mcp_server:
@@ -510,7 +510,7 @@ async def mcp_initialize():
         }
     )
 
-@app.options("/mcp/tools/list")
+@app.options("/financial/mcp/tools/list")
 async def mcp_list_tools_options():
     """Handle CORS preflight for tools list endpoint."""
     return Response(
@@ -521,7 +521,7 @@ async def mcp_list_tools_options():
         }
     )
 
-@app.get("/mcp/tools/list")
+@app.get("/financial/mcp/tools/list")
 async def mcp_list_tools():
     """MCP protocol tool discovery."""
     if not mcp_server:
@@ -549,7 +549,7 @@ async def mcp_call_tool_options():
         }
     )
 
-@app.post("/mcp/tools/call")
+@app.post("/financial/mcp/tools/call")
 async def mcp_call_tool(request: Dict[str, Any]):
     """MCP protocol tool execution."""
     if not mcp_server:
@@ -629,9 +629,17 @@ async def mcp_sse_options():
         }
     )
 
+# Backward compatibility - redirect old endpoint to new one
 @app.get("/mcp/sse")
 @app.post("/mcp/sse")
 @app.head("/mcp/sse")
+async def mcp_sse_legacy(request: Request):
+    """Legacy MCP SSE endpoint - redirects to /financial/mcp/sse for backward compatibility."""
+    return await mcp_sse(request)
+
+@app.get("/financial/mcp/sse")
+@app.post("/financial/mcp/sse")
+@app.head("/financial/mcp/sse")
 async def mcp_sse(request: Request):
     """MCP Server-Sent Events endpoint for real-time communication."""
     if not mcp_server:
