@@ -152,10 +152,11 @@ app.add_middleware(
 
 #### 4. Tailscale Funnel Configuration
 Each server will need its own Tailscale Funnel endpoint:
-- Family: `https://k4nuckhome.hopto.org:8001`
-- Lifestyle: `https://k4nuckhome.hopto.org:8002` 
-- Professional: `https://k4nuckhome.hopto.org:8003`
-- Home: `https://k4nuckhome.hopto.org:8004`
+- Financial: `https://ha-main-remote.tail9144d.ts.net` (port 8000 - WORKING)
+- Family: `https://ha-main-remote.tail9144d.ts.net:8001`
+- Home: `https://ha-main-remote.tail9144d.ts.net:8002`
+- Lifestyle: `https://ha-main-remote.tail9144d.ts.net:8003`
+- Professional: `https://ha-main-remote.tail9144d.ts.net:8004`
 
 ### Implementation Checklist per Server
 
