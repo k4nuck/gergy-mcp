@@ -151,12 +151,16 @@ app.add_middleware(
 - Different ports for each server (8001, 8002, 8003, 8004)
 
 #### 4. Tailscale Funnel Configuration
-Each server will need its own Tailscale Funnel endpoint:
-- Financial: `https://ha-main-remote.tail9144d.ts.net` (port 8000 - WORKING)
-- Family: `https://ha-main-remote.tail9144d.ts.net:8001`
-- Home: `https://ha-main-remote.tail9144d.ts.net:8002`
-- Lifestyle: `https://ha-main-remote.tail9144d.ts.net:8003`
-- Professional: `https://ha-main-remote.tail9144d.ts.net:8004`
+Since Tailscale Funnel already routes to port 8000, future servers will need:
+- **Option A**: Path-based routing (recommended)
+  - Financial: `https://ha-main-remote.tail9144d.ts.net/mcp/sse` (WORKING)
+  - Family: `https://ha-main-remote.tail9144d.ts.net/family/mcp/sse`
+  - Home: `https://ha-main-remote.tail9144d.ts.net/home/mcp/sse`
+  - Lifestyle: `https://ha-main-remote.tail9144d.ts.net/lifestyle/mcp/sse`
+  - Professional: `https://ha-main-remote.tail9144d.ts.net/professional/mcp/sse`
+
+- **Option B**: Multiple Tailscale Funnel instances on different ports
+  - Requires configuring additional funnel routes for ports 8001-8004
 
 ### Implementation Checklist per Server
 

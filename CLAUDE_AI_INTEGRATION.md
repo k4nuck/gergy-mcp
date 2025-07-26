@@ -8,22 +8,22 @@
 - **Description**: Personal financial data management with 8 tools for transactions, balances, and insights
 
 ### 2. Family Server (TO BE IMPLEMENTED)
-- **URL**: `https://ha-main-remote.tail9144d.ts.net:8001/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/family/mcp/sse`
 - **Name**: Gergy Family Coordinator
 - **Description**: Family calendar, activities, and coordination management
 
 ### 3. Home Server (TO BE IMPLEMENTED)
-- **URL**: `https://ha-main-remote.tail9144d.ts.net:8002/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/home/mcp/sse`
 - **Name**: Gergy Home Manager
 - **Description**: Home maintenance, inventory, and household task coordination
 
 ### 4. Lifestyle Server (TO BE IMPLEMENTED)
-- **URL**: `https://ha-main-remote.tail9144d.ts.net:8003/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/lifestyle/mcp/sse`
 - **Name**: Gergy Lifestyle Coach
 - **Description**: Personal goals, fitness, nutrition, and wellness tracking
 
 ### 5. Professional Server (TO BE IMPLEMENTED)
-- **URL**: `https://ha-main-remote.tail9144d.ts.net:8004/mcp/sse`
+- **URL**: `https://ha-main-remote.tail9144d.ts.net/professional/mcp/sse`
 - **Name**: Gergy Career Assistant
 - **Description**: Professional development, networking, and project management
 
