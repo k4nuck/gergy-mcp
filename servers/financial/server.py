@@ -19,6 +19,11 @@ from shared.base_mcp_server import BaseMCPServer
 
 logger = logging.getLogger(__name__)
 
+# Configuration constants
+MCP_PROTOCOL_VERSION = "2025-06-18"
+SERVER_NAME = os.getenv("DOMAIN_NAME", "financial")
+SERVER_FULL_NAME = f"gergy-{SERVER_NAME}"
+
 class FinancialMCPServer(BaseMCPServer):
     """Financial domain MCP server providing financial planning and analysis tools."""
     
@@ -429,7 +434,7 @@ async def add_mcp_headers(request, call_next):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, HEAD, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "false"
-    response.headers["X-MCP-Version"] = "2024-11-05"
+    response.headers["X-MCP-Version"] = MCP_PROTOCOL_VERSION
     response.headers["X-MCP-Transport"] = "http"
     response.headers["Cache-Control"] = "no-cache"
     return response
@@ -484,7 +489,7 @@ async def mcp_initialize():
     
     return Response(
         content=json.dumps({
-            "protocolVersion": "2025-06-18",
+            "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {
                 "tools": {
                     "listChanged": True
@@ -498,7 +503,7 @@ async def mcp_initialize():
                 }
             },
             "serverInfo": {
-                "name": "gergy-financial",
+                "name": SERVER_FULL_NAME,
                 "version": "1.0.0",
                 "description": "Gergy Financial MCP Server - Personal financial data management with 8 tools for transactions, balances, and insights"
             }
@@ -669,90 +674,100 @@ async def mcp_sse(request: Request):
         import asyncio
         
         try:
-            # Extract request ID from POST data if available
+            # Extract method and request ID from POST data
+            method = "initialize"  # default for GET requests
             request_id = 0
-            if post_data and "id" in post_data:
-                request_id = post_data["id"]
             
-            # Send initialization message with matching ID and protocol version
-            init_message = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": {
-                        "tools": {
-                            "listChanged": True
-                        },
-                        "resources": {
-                            "subscribe": False,
-                            "listChanged": False
-                        },
-                        "prompts": {
-                            "listChanged": False
-                        }
-                    },
-                    "serverInfo": {
-                        "name": "gergy-financial",
-                        "version": "1.0.0",
-                        "description": "Gergy Financial MCP Server"
-                    }
-                }
-            }
-            init_data = f"data: {json.dumps(init_message)}\n\n"
-            logger.info(f"SSE RESPONSE 1/3: {init_data.strip()}")
-            yield init_data
-            await asyncio.sleep(0.1)  # Small delay to ensure delivery
+            if post_data:
+                method = post_data.get("method", "initialize")
+                request_id = post_data.get("id", 0)
+                logger.info(f"Processing MCP method: {method} (ID: {request_id})")
             
-            # Send standard MCP tools/list with all tools
-            tools_data = []
-            for tool in mcp_server.tools.values():
-                tools_data.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.parameters
-                })
-            
-            tools_message = {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/list",
-                "result": {
-                    "tools": tools_data
-                }
-            }
-            tools_data_str = f"data: {json.dumps(tools_message)}\n\n"
-            logger.info(f"SSE RESPONSE 2/3: {tools_data_str[:500]}..." if len(tools_data_str) > 500 else f"SSE RESPONSE 2/3: {tools_data_str.strip()}")
-            yield tools_data_str
-            await asyncio.sleep(0.1)
-            
-            # Send ready signal
-            ready_message = {
-                "jsonrpc": "2.0",
-                "method": "notification/ready",
-                "params": {
-                    "status": "ready",
-                    "toolCount": len(mcp_server.tools)
-                }
-            }
-            ready_data = f"data: {json.dumps(ready_message)}\n\n"
-            logger.info(f"SSE RESPONSE 3/3: {ready_data.strip()}")
-            yield ready_data
-            await asyncio.sleep(0.1)
-            
-            # Keep connection alive with periodic pings
-            while True:
-                await asyncio.sleep(30)
-                ping_message = {
+            # Handle different MCP methods
+            if method == "initialize":
+                response = {
                     "jsonrpc": "2.0",
-                    "method": "ping",
-                    "params": {
-                        "timestamp": datetime.utcnow().isoformat()
+                    "id": request_id,
+                    "result": {
+                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                        "capabilities": {
+                            "tools": {"listChanged": True},
+                            "resources": {"subscribe": False, "listChanged": False},
+                            "prompts": {"listChanged": False}
+                        },
+                        "serverInfo": {
+                            "name": SERVER_FULL_NAME,
+                            "version": "1.0.0",
+                            "description": "Gergy Financial MCP Server"
+                        }
                     }
                 }
-                ping_data = f"data: {json.dumps(ping_message)}\n\n"
-                logger.info(f"SSE PING: {ping_data.strip()}")
-                yield ping_data
+                
+            elif method == "tools/list":
+                tools_data = []
+                for tool in mcp_server.tools.values():
+                    tools_data.append({
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.parameters
+                    })
+                
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "tools": tools_data
+                    }
+                }
+                
+            elif method == "prompts/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "prompts": []  # No prompts supported
+                    }
+                }
+                
+            elif method == "resources/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "resources": []  # No resources supported
+                    }
+                }
+                
+            else:
+                # Unknown method - return error
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Method not found: {method}"
+                    }
+                }
+            
+            # Send the specific response
+            response_data = f"data: {json.dumps(response)}\n\n"
+            logger.info(f"SSE RESPONSE for {method}: {response_data[:500]}..." if len(response_data) > 500 else f"SSE RESPONSE for {method}: {response_data.strip()}")
+            yield response_data
+            
+            # For GET requests (streaming), send periodic pings to keep connection alive
+            if request.method == "GET":
+                while True:
+                    await asyncio.sleep(30)
+                    ping_message = {
+                        "jsonrpc": "2.0",
+                        "method": "ping",
+                        "params": {
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    }
+                    ping_data = f"data: {json.dumps(ping_message)}\n\n"
+                    logger.info(f"SSE PING: {ping_data.strip()}")
+                    yield ping_data
                 
         except Exception as e:
             logger.error(f"SSE stream error: {e}")
@@ -859,7 +874,7 @@ async def main():
             https_mode = False
     
     if not https_mode:
-        logger.info("Starting Financial MCP Server with HTTP on port 8000")
+        logger.info(f"Starting Financial MCP Server with HTTP on port {port}")
         config = uvicorn.Config(
             app=app,
             host="0.0.0.0",
