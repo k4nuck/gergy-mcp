@@ -20,7 +20,8 @@ from shared.base_mcp_server import BaseMCPServer
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-MCP_PROTOCOL_VERSION = "2025-06-18"
+SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"]
+DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = os.getenv("DOMAIN_NAME", "financial")
 SERVER_FULL_NAME = f"gergy-{SERVER_NAME}"
 
@@ -434,7 +435,7 @@ async def add_mcp_headers(request, call_next):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, HEAD, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "false"
-    response.headers["X-MCP-Version"] = MCP_PROTOCOL_VERSION
+    response.headers["X-MCP-Version"] = DEFAULT_PROTOCOL_VERSION
     response.headers["X-MCP-Transport"] = "http"
     response.headers["Cache-Control"] = "no-cache"
     return response
@@ -487,9 +488,10 @@ async def mcp_initialize():
     if not mcp_server:
         raise HTTPException(status_code=503, detail="MCP server not initialized")
     
+    # Default to latest version for GET requests
     return Response(
         content=json.dumps({
-            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "protocolVersion": DEFAULT_PROTOCOL_VERSION,
             "capabilities": {
                 "tools": {
                     "listChanged": True
@@ -694,31 +696,48 @@ async def mcp_sse(request: Request):
             
             # Handle different MCP methods
             if method == "initialize":
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "result": {
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": {
-                            "tools": {
-                                "listChanged": True
-                            },
-                            "resources": {
-                                "subscribe": True,
-                                "listChanged": True
-                            },
-                            "prompts": {
-                                "listChanged": True
-                            }
-                        },
-                        "serverInfo": {
-                            "name": SERVER_FULL_NAME,
-                            "title": "Gergy Financial Assistant",
-                            "version": "1.0.0",
-                            "description": "Gergy Financial MCP Server"
+                # CRITICAL: Protocol version negotiation
+                params = post_data.get("params", {}) if post_data else {}
+                client_version = params.get("protocolVersion", DEFAULT_PROTOCOL_VERSION)
+                
+                if client_version not in SUPPORTED_PROTOCOL_VERSIONS:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32602,
+                            "message": f"Unsupported protocol version: {client_version}. Supported: {SUPPORTED_PROTOCOL_VERSIONS}"
                         }
                     }
-                }
+                else:
+                    # Respond with the SAME version the client requested
+                    logger.info(f"Protocol version negotiation: Client requested {client_version}, responding with {client_version}")
+                    
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "protocolVersion": client_version,  # Match client's version!
+                            "capabilities": {
+                                "tools": {
+                                    "listChanged": True
+                                },
+                                "resources": {
+                                    "subscribe": True,
+                                    "listChanged": True
+                                },
+                                "prompts": {
+                                    "listChanged": True
+                                }
+                            },
+                            "serverInfo": {
+                                "name": SERVER_FULL_NAME,
+                                "title": "Gergy Financial Assistant",
+                                "version": "1.0.0",
+                                "description": "Gergy Financial MCP Server"
+                            }
+                        }
+                    }
                 
             elif method == "tools/list":
                 tools_data = []
