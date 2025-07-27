@@ -738,6 +738,64 @@ async def mcp_sse(request: Request):
                     }
                 }
                 
+            elif method == "tools/call":
+                # Handle tool execution
+                try:
+                    params = post_data.get("params", {})
+                    tool_name = params.get("name")
+                    arguments = params.get("arguments", {})
+                    
+                    if not tool_name:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Invalid params: missing tool name"
+                            }
+                        }
+                    elif tool_name not in mcp_server.tools:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32601,
+                                "message": f"Tool not found: {tool_name}"
+                            }
+                        }
+                    else:
+                        # Execute the tool
+                        tool = mcp_server.tools[tool_name]
+                        tool_result = await tool.handler(arguments)
+                        
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                                    }
+                                ]
+                            }
+                        }
+                except Exception as e:
+                    logger.error(f"Tool execution error: {e}")
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32603,
+                            "message": f"Internal error: {str(e)}"
+                        }
+                    }
+                
+            elif method == "notifications/initialized":
+                # This is a notification (no response required, but we'll acknowledge)
+                logger.info("Client initialization completed")
+                response = None  # Notifications don't require responses
+                
             else:
                 # Unknown method - return error
                 response = {
@@ -749,10 +807,15 @@ async def mcp_sse(request: Request):
                     }
                 }
             
-            # Send the specific response
-            response_data = f"data: {json.dumps(response)}\n\n"
-            logger.info(f"SSE RESPONSE for {method}: {response_data[:500]}..." if len(response_data) > 500 else f"SSE RESPONSE for {method}: {response_data.strip()}")
-            yield response_data
+            # Send the specific response (if any - notifications don't require responses)
+            if response is not None:
+                response_data = f"data: {json.dumps(response)}\n\n"
+                logger.info(f"SSE RESPONSE for {method}: {response_data[:500]}..." if len(response_data) > 500 else f"SSE RESPONSE for {method}: {response_data.strip()}")
+                yield response_data
+            else:
+                logger.info(f"No response required for notification: {method}")
+                # For notifications, just send a minimal acknowledgment to keep connection alive
+                yield "data: \n\n"
             
             # For GET requests (streaming), send periodic pings to keep connection alive
             if request.method == "GET":
