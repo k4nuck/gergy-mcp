@@ -685,61 +685,12 @@ async def mcp_sse(request: Request):
         import asyncio
         
         try:
-            # Extract method and request ID from POST data
-            method = "initialize"  # default for GET requests
-            request_id = 0
-            
-            if post_data:
-                method = post_data.get("method", "initialize")
-                request_id = post_data.get("id", 0)
-                logger.info(f"Processing MCP method: {method} (ID: {request_id})")
-            
-            # Handle different MCP methods
-            if method == "initialize":
-                # CRITICAL: Protocol version negotiation
-                params = post_data.get("params", {}) if post_data else {}
-                client_version = params.get("protocolVersion", DEFAULT_PROTOCOL_VERSION)
+            # Different behavior for GET vs POST requests
+            if request.method == "GET":
+                # GET requests: Stream server-initiated discovery
+                logger.info("Starting SSE discovery stream for GET request")
                 
-                if client_version not in SUPPORTED_PROTOCOL_VERSIONS:
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "error": {
-                            "code": -32602,
-                            "message": f"Unsupported protocol version: {client_version}. Supported: {SUPPORTED_PROTOCOL_VERSIONS}"
-                        }
-                    }
-                else:
-                    # Respond with the SAME version the client requested
-                    logger.info(f"Protocol version negotiation: Client requested {client_version}, responding with {client_version}")
-                    
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "result": {
-                            "protocolVersion": client_version,  # Match client's version!
-                            "capabilities": {
-                                "tools": {
-                                    "listChanged": True
-                                },
-                                "resources": {
-                                    "subscribe": True,
-                                    "listChanged": True
-                                },
-                                "prompts": {
-                                    "listChanged": True
-                                }
-                            },
-                            "serverInfo": {
-                                "name": SERVER_FULL_NAME,
-                                "title": "Gergy Financial Assistant",
-                                "version": "1.0.0",
-                                "description": "Gergy Financial MCP Server"
-                            }
-                        }
-                    }
-                
-            elif method == "tools/list":
+                # Stream tools discovery
                 tools_data = []
                 for tool in mcp_server.tools.values():
                     tools_data.append({
@@ -748,13 +699,124 @@ async def mcp_sse(request: Request):
                         "inputSchema": tool.parameters
                     })
                 
-                response = {
+                tools_message = {
                     "jsonrpc": "2.0",
-                    "id": request_id,
-                    "result": {
-                        "tools": tools_data
-                    }
+                    "id": "stream-tools",
+                    "method": "tools/list",
+                    "result": {"tools": tools_data}
                 }
+                tools_data_str = f"data: {json.dumps(tools_message)}\n\n"
+                logger.info(f"SSE DISCOVERY STREAM - Tools: {len(tools_data)} tools")
+                yield tools_data_str
+                await asyncio.sleep(0.1)
+                
+                # Stream prompts discovery
+                prompts_message = {
+                    "jsonrpc": "2.0",
+                    "id": "stream-prompts",
+                    "method": "prompts/list",
+                    "result": {"prompts": []}
+                }
+                prompts_data_str = f"data: {json.dumps(prompts_message)}\n\n"
+                logger.info("SSE DISCOVERY STREAM - Prompts: 0 prompts")
+                yield prompts_data_str
+                await asyncio.sleep(0.1)
+                
+                # Stream resources discovery
+                resources_message = {
+                    "jsonrpc": "2.0",
+                    "id": "stream-resources",
+                    "method": "resources/list",
+                    "result": {"resources": []}
+                }
+                resources_data_str = f"data: {json.dumps(resources_message)}\n\n"
+                logger.info("SSE DISCOVERY STREAM - Resources: 0 resources")
+                yield resources_data_str
+                await asyncio.sleep(0.1)
+                
+                # Keep connection alive with periodic pings
+                while True:
+                    await asyncio.sleep(30)
+                    ping_message = {
+                        "jsonrpc": "2.0",
+                        "method": "ping",
+                        "params": {"timestamp": datetime.utcnow().isoformat()}
+                    }
+                    ping_data = f"data: {json.dumps(ping_message)}\n\n"
+                    logger.info("SSE DISCOVERY STREAM - Ping")
+                    yield ping_data
+                    
+            else:
+                # POST requests: Handle specific method requests
+                method = "initialize"  # default
+                request_id = 0
+                
+                if post_data:
+                    method = post_data.get("method", "initialize")
+                    request_id = post_data.get("id", 0)
+                    logger.info(f"Processing MCP method: {method} (ID: {request_id})")
+                
+                # Handle different MCP methods (for POST requests)
+                if method == "initialize":
+                    # CRITICAL: Protocol version negotiation
+                    params = post_data.get("params", {}) if post_data else {}
+                    client_version = params.get("protocolVersion", DEFAULT_PROTOCOL_VERSION)
+                
+                    if client_version not in SUPPORTED_PROTOCOL_VERSIONS:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32602,
+                                "message": f"Unsupported protocol version: {client_version}. Supported: {SUPPORTED_PROTOCOL_VERSIONS}"
+                            }
+                        }
+                    else:
+                        # Respond with the SAME version the client requested
+                        logger.info(f"Protocol version negotiation: Client requested {client_version}, responding with {client_version}")
+                        
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "protocolVersion": client_version,  # Match client's version!
+                                "capabilities": {
+                                    "tools": {
+                                        "listChanged": True
+                                    },
+                                    "resources": {
+                                        "subscribe": True,
+                                        "listChanged": True
+                                    },
+                                    "prompts": {
+                                        "listChanged": True
+                                    }
+                                },
+                                "serverInfo": {
+                                    "name": SERVER_FULL_NAME,
+                                    "title": "Gergy Financial Assistant",
+                                    "version": "1.0.0",
+                                    "description": "Gergy Financial MCP Server"
+                                }
+                            }
+                        }
+                    
+                elif method == "tools/list":
+                    tools_data = []
+                    for tool in mcp_server.tools.values():
+                        tools_data.append({
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.parameters
+                        })
+                
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "tools": tools_data
+                        }
+                    }
                 
             elif method == "prompts/list":
                 response = {
