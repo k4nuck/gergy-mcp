@@ -20,7 +20,7 @@ from shared.base_mcp_server import BaseMCPServer
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = os.getenv("DOMAIN_NAME", "financial")
 SERVER_FULL_NAME = f"gergy-{SERVER_NAME}"
 
@@ -495,11 +495,11 @@ async def mcp_initialize():
                     "listChanged": True
                 },
                 "resources": {
-                    "subscribe": False,
-                    "listChanged": False
+                    "subscribe": True,
+                    "listChanged": True
                 },
                 "prompts": {
-                    "listChanged": False
+                    "listChanged": True
                 }
             },
             "serverInfo": {
@@ -691,9 +691,16 @@ async def mcp_sse(request: Request):
                     "result": {
                         "protocolVersion": MCP_PROTOCOL_VERSION,
                         "capabilities": {
-                            "tools": {"listChanged": True},
-                            "resources": {"subscribe": False, "listChanged": False},
-                            "prompts": {"listChanged": False}
+                            "tools": {
+                                "listChanged": True
+                            },
+                            "resources": {
+                                "subscribe": True,
+                                "listChanged": True
+                            },
+                            "prompts": {
+                                "listChanged": True
+                            }
                         },
                         "serverInfo": {
                             "name": SERVER_FULL_NAME,
