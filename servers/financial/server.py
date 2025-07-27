@@ -20,7 +20,7 @@ from shared.base_mcp_server import BaseMCPServer
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-MCP_PROTOCOL_VERSION = "2024-11-05"
+MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = os.getenv("DOMAIN_NAME", "financial")
 SERVER_FULL_NAME = f"gergy-{SERVER_NAME}"
 
@@ -504,6 +504,7 @@ async def mcp_initialize():
             },
             "serverInfo": {
                 "name": SERVER_FULL_NAME,
+                "title": "Gergy Financial Assistant",
                 "version": "1.0.0",
                 "description": "Gergy Financial MCP Server - Personal financial data management with 8 tools for transactions, balances, and insights"
             }
@@ -668,6 +669,14 @@ async def mcp_sse(request: Request):
     # Log the request for debugging
     origin = request.headers.get("origin", "unknown")
     user_agent = request.headers.get("user-agent", "unknown")
+    
+    # Check for MCP-Protocol-Version header (required in 2025-06-18)
+    protocol_version_header = request.headers.get("MCP-Protocol-Version")
+    if protocol_version_header:
+        logger.info(f"MCP-Protocol-Version header: {protocol_version_header}")
+        if protocol_version_header not in ["2025-03-26", "2025-06-18"]:
+            logger.warning(f"Unsupported protocol version in header: {protocol_version_header}")
+    
     logger.info(f"MCP SSE connection from origin: {origin}, user-agent: {user_agent}, method: {request.method}")
     
     async def event_stream():
@@ -704,6 +713,7 @@ async def mcp_sse(request: Request):
                         },
                         "serverInfo": {
                             "name": SERVER_FULL_NAME,
+                            "title": "Gergy Financial Assistant",
                             "version": "1.0.0",
                             "description": "Gergy Financial MCP Server"
                         }
